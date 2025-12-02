@@ -10,18 +10,25 @@ export const usePlayer = () => {
     collided: false,
   });
 
-  const rotate = (matrix: (TetrominoType | 0)[][]) => {
-    // Make the rows to become cols (transpose)
-    const mmap = matrix.map((_, index) =>
+  const rotate = (matrix: (TetrominoType | 0)[][], dir: number) => {
+    // Transpose matrix
+    const transposed = matrix.map((_, index) =>
       matrix.map((col) => col[index])
     );
-    // Reverse each row to get a rotated matrix
-    return mmap.map((row) => row.reverse());
+    
+    // Rotate
+    if (dir > 0) {
+        // Clockwise: Reverse each row
+        return transposed.map((row) => row.reverse());
+    } else {
+        // Counter-Clockwise: Reverse the array of rows
+        return transposed.reverse();
+    }
   };
 
   const playerRotate = (stage: Grid, dir: number) => {
     const clonedPlayer = JSON.parse(JSON.stringify(player));
-    clonedPlayer.tetromino = rotate(clonedPlayer.tetromino);
+    clonedPlayer.tetromino = rotate(clonedPlayer.tetromino, dir);
 
     // Wall kick (basic)
     const pos = clonedPlayer.pos.x;
@@ -31,7 +38,7 @@ export const usePlayer = () => {
       offset = -(offset + (offset > 0 ? 1 : -1));
       if (offset > clonedPlayer.tetromino[0].length) {
         // Failed to rotate
-        rotate(clonedPlayer.tetromino); // Rotate back
+        clonedPlayer.tetromino = rotate(clonedPlayer.tetromino, -dir); // Rotate back
         clonedPlayer.pos.x = pos;
         return;
       }

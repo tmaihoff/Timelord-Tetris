@@ -1,9 +1,11 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { createStage, checkCollision } from './utils';
 import { useInterval } from './hooks/useInterval';
 import { usePlayer } from './hooks/usePlayer';
 import { useStage } from './hooks/useStage';
 import { useGameStatus } from './hooks/useGameStatus';
+import { ITeleport } from './types';
 
 import Stage from './components/Stage';
 import Display from './components/Display';
@@ -14,6 +16,7 @@ const App: React.FC = () => {
   const [dropTime, setDropTime] = useState<number | null>(null);
   const [gameOver, setGameOver] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
+  const [teleport, setTeleport] = useState<ITeleport | null>(null);
 
   const { player, updatePlayerPos, resetPlayer, playerRotate, setPlayer } = usePlayer();
   const { stage, setStage, rowsCleared, animatingRows } = useStage(player, resetPlayer);
@@ -21,6 +24,77 @@ const App: React.FC = () => {
 
   // Focus reference for keyboard events
   const gameAreaRef = useRef<HTMLDivElement>(null);
+  
+  // Audio Ref
+  const exterminateAudio = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+      // Pre-load the authentic Dalek sound
+      exterminateAudio.current = new Audio('https://ia800201.us.archive.org/18/items/Dalek_Exterminate/Exterminate.mp3');
+      exterminateAudio.current.volume = 1.0;
+  }, []);
+
+  // Play Exterminate Sound
+  const playExterminateSound = () => {
+    // 1. Play the authentic MP3 Voice
+    if (exterminateAudio.current) {
+        exterminateAudio.current.currentTime = 0;
+        exterminateAudio.current.play().catch(e => console.warn("Audio playback blocked:", e));
+    }
+
+    // 2. Web Audio Synth for Laser/Gun effect (Layered on top)
+    try {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContext) return;
+        
+        const ctx = new AudioContext();
+        const t = ctx.currentTime;
+
+        // Oscillator for the "Zap"
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        // Metallic sawtooth wave
+        osc.type = 'sawtooth';
+        
+        // Frequency sweep (high to low)
+        osc.frequency.setValueAtTime(2000, t);
+        osc.frequency.exponentialRampToValueAtTime(100, t + 0.4);
+        
+        // Volume envelope
+        gain.gain.setValueAtTime(0.3, t); // Slightly lower volume to let voice punch through
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start(t);
+        osc.stop(t + 0.5);
+
+        // Add a second layer for "Ring Mod" feel (Noise burst)
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.type = 'square';
+        osc2.frequency.setValueAtTime(50, t); // Low rumble
+        gain2.gain.setValueAtTime(0.2, t);
+        gain2.gain.linearRampToValueAtTime(0, t + 0.3);
+        
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.start(t);
+        osc2.stop(t + 0.3);
+
+    } catch (e) {
+        console.error("Audio synth failed", e);
+    }
+  };
+
+  // Effect to play Exterminate sound
+  useEffect(() => {
+    if (animatingRows.length > 0) {
+        playExterminateSound();
+    }
+  }, [animatingRows]);
 
   const movePlayer = (dir: number) => {
     // Disable movement during animation
@@ -41,6 +115,16 @@ const App: React.FC = () => {
     setRows(0);
     setLevel(0);
     setGameStarted(true);
+    setTeleport(null);
+    
+    // Unlock audio context on user interaction
+    if (exterminateAudio.current) {
+        exterminateAudio.current.play().then(() => {
+            exterminateAudio.current?.pause();
+            exterminateAudio.current!.currentTime = 0;
+        }).catch(() => {});
+    }
+    
     gameAreaRef.current?.focus();
   };
 
@@ -84,11 +168,41 @@ const App: React.FC = () => {
   };
 
   const hardDrop = () => {
-    if (animatingRows.length > 0) return;
+    if (animatingRows.length > 0 || gameOver || !gameStarted) return;
+    
     let tempY = 0;
     while (!checkCollision(player, stage, { x: 0, y: tempY + 1 })) {
         tempY += 1;
     }
+
+    // Trigger Teleport Animation
+    setTeleport({
+        active: true,
+        x: player.pos.x,
+        yStart: player.pos.y,
+        yEnd: player.pos.y + tempY,
+        tetromino: player.tetromino
+    });
+    
+    // Play teleport sound (short swoosh)
+    try {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.2);
+    } catch(e) {}
+
+    // Clear animation after short delay (match CSS animation duration)
+    setTimeout(() => setTeleport(null), 300);
+
     updatePlayerPos({ x: 0, y: tempY, collided: true });
   }
 
@@ -117,9 +231,9 @@ const App: React.FC = () => {
     if (!gameOver && gameStarted && animatingRows.length === 0) {
         // 0 = Left Click, 2 = Right Click
         if (e.button === 0) {
-            playerRotate(stage, -1); // Rotate Left (CCW) - UPDATED
+            playerRotate(stage, -1); // Rotate Left (CCW)
         } else if (e.button === 2) {
-            playerRotate(stage, 1); // Rotate Right (CW) - UPDATED
+            playerRotate(stage, 1); // Rotate Right (CW)
         }
     }
   };
@@ -163,7 +277,7 @@ const App: React.FC = () => {
         
         {/* Game Stage */}
         <div className="relative group">
-            <Stage stage={stage} animatingRows={animatingRows} />
+            <Stage stage={stage} animatingRows={animatingRows} teleport={teleport} />
             
             {/* Start Overlay */}
             {!gameStarted && !gameOver && (
