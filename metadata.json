@@ -1,0 +1,5 @@
+{
+  "name": "Timelord Tetris",
+  "description": "A classic, fully functional Tetris clone built with React and Tailwind CSS, featuring touch controls for mobile, keyboard support, score tracking, and increasing difficulty levels.",
+  "requestFramePermissions": []
+}
