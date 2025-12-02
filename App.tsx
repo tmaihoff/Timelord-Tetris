@@ -29,20 +29,21 @@ const App: React.FC = () => {
   const exterminateAudio = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-      // Pre-load the authentic Dalek sound
-      exterminateAudio.current = new Audio('https://ia800201.us.archive.org/18/items/Dalek_Exterminate/Exterminate.mp3');
+      // Use the high-quality OGG from Wikimedia Commons (Original BBC Sound)
+      exterminateAudio.current = new Audio('https://upload.wikimedia.org/wikipedia/commons/9/98/Dalek_-_Exterminate%21.ogg');
       exterminateAudio.current.volume = 1.0;
   }, []);
 
   // Play Exterminate Sound
   const playExterminateSound = () => {
-    // 1. Play the authentic MP3 Voice
+    // 1. Play the authentic Voice
     if (exterminateAudio.current) {
         exterminateAudio.current.currentTime = 0;
         exterminateAudio.current.play().catch(e => console.warn("Audio playback blocked:", e));
     }
 
     // 2. Web Audio Synth for Laser/Gun effect (Layered on top)
+    // Improved to sound more like the 2005 series "static crash" gun
     try {
         const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
         if (!AudioContext) return;
@@ -50,39 +51,47 @@ const App: React.FC = () => {
         const ctx = new AudioContext();
         const t = ctx.currentTime;
 
-        // Oscillator for the "Zap"
-        const osc = ctx.createOscillator();
+        // Create Noise Buffer for the "Crash"
+        const bufferSize = ctx.sampleRate * 0.5; // 0.5 seconds
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = buffer;
+
+        // Filter the noise to be harsh
+        const bandpass = ctx.createBiquadFilter();
+        bandpass.type = 'bandpass';
+        bandpass.frequency.value = 1000;
+        bandpass.Q.value = 1;
+
         const gain = ctx.createGain();
-        
-        // Metallic sawtooth wave
-        osc.type = 'sawtooth';
-        
-        // Frequency sweep (high to low)
-        osc.frequency.setValueAtTime(2000, t);
-        osc.frequency.exponentialRampToValueAtTime(100, t + 0.4);
-        
-        // Volume envelope
-        gain.gain.setValueAtTime(0.3, t); // Slightly lower volume to let voice punch through
-        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
-        
-        osc.connect(gain);
+        gain.gain.setValueAtTime(0.5, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+
+        noise.connect(bandpass);
+        bandpass.connect(gain);
         gain.connect(ctx.destination);
         
-        osc.start(t);
-        osc.stop(t + 0.5);
+        noise.start(t);
 
-        // Add a second layer for "Ring Mod" feel (Noise burst)
-        const osc2 = ctx.createOscillator();
-        const gain2 = ctx.createGain();
-        osc2.type = 'square';
-        osc2.frequency.setValueAtTime(50, t); // Low rumble
-        gain2.gain.setValueAtTime(0.2, t);
-        gain2.gain.linearRampToValueAtTime(0, t + 0.3);
+        // Underlying High Pitch Whine (The beam charging/firing)
+        const osc = ctx.createOscillator();
+        const oscGain = ctx.createGain();
         
-        osc2.connect(gain2);
-        gain2.connect(ctx.destination);
-        osc2.start(t);
-        osc2.stop(t + 0.3);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(3000, t);
+        osc.frequency.exponentialRampToValueAtTime(100, t + 0.2);
+        
+        oscGain.gain.setValueAtTime(0.2, t);
+        oscGain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+
+        osc.connect(oscGain);
+        oscGain.connect(ctx.destination);
+        osc.start(t);
 
     } catch (e) {
         console.error("Audio synth failed", e);
