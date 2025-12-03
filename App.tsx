@@ -5,6 +5,8 @@ import { useInterval } from './hooks/useInterval';
 import { usePlayer } from './hooks/usePlayer';
 import { useStage } from './hooks/useStage';
 import { useGameStatus } from './hooks/useGameStatus';
+import { useTardisSound } from './hooks/useTardisSound';
+import { useMusic } from './hooks/useMusic';
 import { ITeleport } from './types';
 
 import Stage from './components/Stage';
@@ -17,6 +19,9 @@ const App: React.FC = () => {
   const [gameOver, setGameOver] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
   const [teleport, setTeleport] = useState<ITeleport | null>(null);
+  
+  // Audio Phase State: 'tardis' or 'music'
+  const [audioPhase, setAudioPhase] = useState<'tardis' | 'music'>('tardis');
 
   const { player, updatePlayerPos, resetPlayer, playerRotate, setPlayer } = usePlayer();
   const { stage, setStage, rowsCleared, animatingRows } = useStage(player, resetPlayer);
@@ -24,26 +29,37 @@ const App: React.FC = () => {
 
   // Focus reference for keyboard events
   const gameAreaRef = useRef<HTMLDivElement>(null);
+
+  // --- AUDIO LOGIC ---
   
-  // Audio Ref
-  const exterminateAudio = useRef<HTMLAudioElement | null>(null);
-
+  // Cycle between Tardis sound and Music
   useEffect(() => {
-      // Use the high-quality OGG from Wikimedia Commons (Original BBC Sound)
-      exterminateAudio.current = new Audio('https://upload.wikimedia.org/wikipedia/commons/9/98/Dalek_-_Exterminate%21.ogg');
-      exterminateAudio.current.volume = 1.0;
-  }, []);
+      if (!gameStarted || gameOver) {
+          setAudioPhase('tardis'); // Reset to start phase
+          return;
+      }
 
-  // Play Exterminate Sound
-  const playExterminateSound = () => {
-    // 1. Play the authentic Voice
-    if (exterminateAudio.current) {
-        exterminateAudio.current.currentTime = 0;
-        exterminateAudio.current.play().catch(e => console.warn("Audio playback blocked:", e));
-    }
+      // Phase durations
+      const TARDIS_DURATION = 12000; // 12 seconds for TARDIS (materialization sound)
+      const MUSIC_DURATION = 32000;  // 32 seconds for Music loop
 
-    // 2. Web Audio Synth for Laser/Gun effect (Layered on top)
-    // Improved to sound more like the 2005 series "static crash" gun
+      const duration = audioPhase === 'tardis' ? TARDIS_DURATION : MUSIC_DURATION;
+
+      const timer = setTimeout(() => {
+          setAudioPhase(prev => prev === 'tardis' ? 'music' : 'tardis');
+      }, duration);
+
+      return () => clearTimeout(timer);
+  }, [gameStarted, gameOver, audioPhase]);
+
+  // Active Hooks based on Phase
+  const isPlaying = gameStarted && !gameOver;
+  useTardisSound(isPlaying && audioPhase === 'tardis');
+  useMusic(isPlaying && audioPhase === 'music');
+  
+  // Audio Refs (Only laser synth logic remains, no voice files)
+  const playLaserSound = () => {
+    // Purely synthesized laser sound
     try {
         const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
         if (!AudioContext) return;
@@ -69,7 +85,7 @@ const App: React.FC = () => {
         bandpass.Q.value = 1;
 
         const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.5, t);
+        gain.gain.setValueAtTime(0.3, t);
         gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
 
         noise.connect(bandpass);
@@ -86,7 +102,7 @@ const App: React.FC = () => {
         osc.frequency.setValueAtTime(3000, t);
         osc.frequency.exponentialRampToValueAtTime(100, t + 0.2);
         
-        oscGain.gain.setValueAtTime(0.2, t);
+        oscGain.gain.setValueAtTime(0.1, t);
         oscGain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
 
         osc.connect(oscGain);
@@ -98,10 +114,33 @@ const App: React.FC = () => {
     }
   };
 
-  // Effect to play Exterminate sound
+  const playRotateSound = () => {
+      try {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(600, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.05);
+
+        gain.gain.setValueAtTime(0.05, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.05);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.05);
+      } catch (e) {}
+  };
+
+  // Effect to play Exterminate (Laser only) sound
   useEffect(() => {
     if (animatingRows.length > 0) {
-        playExterminateSound();
+        playLaserSound();
     }
   }, [animatingRows]);
 
@@ -125,14 +164,7 @@ const App: React.FC = () => {
     setLevel(0);
     setGameStarted(true);
     setTeleport(null);
-    
-    // Unlock audio context on user interaction
-    if (exterminateAudio.current) {
-        exterminateAudio.current.play().then(() => {
-            exterminateAudio.current?.pause();
-            exterminateAudio.current!.currentTime = 0;
-        }).catch(() => {});
-    }
+    setAudioPhase('tardis'); // Always start with TARDIS sound
     
     gameAreaRef.current?.focus();
   };
@@ -229,6 +261,7 @@ const App: React.FC = () => {
       } else if (key === 'ArrowUp') {
         // Keep arrow up for rotation just in case
         playerRotate(stage, 1);
+        playRotateSound();
       } else if (key === ' ' || key === 'w' || key === 'W') { 
         // Space or W for Hard Drop
         hardDrop();
@@ -241,8 +274,10 @@ const App: React.FC = () => {
         // 0 = Left Click, 2 = Right Click
         if (e.button === 0) {
             playerRotate(stage, -1); // Rotate Left (CCW)
+            playRotateSound();
         } else if (e.button === 2) {
             playerRotate(stage, 1); // Rotate Right (CW)
+            playRotateSound();
         }
     }
   };
@@ -264,7 +299,7 @@ const App: React.FC = () => {
 
   return (
     <div
-      className="w-full h-screen bg-[#0b1016] overflow-hidden flex flex-col items-center justify-center outline-none no-select cursor-crosshair"
+      className="w-full h-screen bg-[#0b1016] overflow-hidden flex flex-col items-center justify-center outline-none no-select cursor-crosshair relative"
       role="button"
       tabIndex={0}
       onKeyDown={move}
@@ -281,7 +316,7 @@ const App: React.FC = () => {
       <h1 className="text-4xl md:text-6xl font-vt323 text-blue-100 mb-4 md:mb-8 tracking-wider drop-shadow-[0_0_15px_rgba(0,100,255,0.8)]">
         TIME LORD TETRIS
       </h1>
-
+      
       <div className="flex flex-col md:flex-row items-start gap-4 md:gap-12 max-w-[95vw] mx-auto p-4 w-full justify-center">
         
         {/* Game Stage */}
@@ -353,7 +388,7 @@ const App: React.FC = () => {
       <div className="md:hidden">
          <Controls 
             move={(dir) => movePlayer(dir)} 
-            rotate={() => playerRotate(stage, 1)} 
+            rotate={() => { playerRotate(stage, 1); playRotateSound(); }} 
             drop={dropPlayer}
             hardDrop={hardDrop}
         />

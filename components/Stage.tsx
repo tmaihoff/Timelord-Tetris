@@ -116,7 +116,7 @@ const Stage: React.FC<StageProps> = ({ stage, animatingRows, teleport }) => {
                             }}
                         >
                             {/* Speech Bubble */}
-                            <div className="absolute -top-12 left-10 bg-white text-black p-2 rounded-xl rounded-bl-none font-bold text-xs whitespace-nowrap border-2 border-black animate-pop-in z-50">
+                            <div className="absolute -top-16 -right-10 bg-white text-red-600 p-3 rounded-2xl rounded-bl-none font-black text-xl whitespace-nowrap border-4 border-black animate-pop-in z-50 shadow-[4px_4px_0px_rgba(0,0,0,0.5)] tracking-wider">
                                 EXTERMINATE!
                             </div>
 
