@@ -1,13 +1,15 @@
+
 import React from 'react';
 import Cell from './Cell';
-import { Grid } from '../types';
+import { Grid, ITeleport } from '../types';
 
 interface StageProps {
   stage: Grid;
   animatingRows: number[];
+  teleport: ITeleport | null;
 }
 
-const Stage: React.FC<StageProps> = ({ stage, animatingRows }) => {
+const Stage: React.FC<StageProps> = ({ stage, animatingRows, teleport }) => {
     
     // Calculate laser position and size
     const isAnimating = animatingRows.length > 0;
@@ -28,47 +30,98 @@ const Stage: React.FC<StageProps> = ({ stage, animatingRows }) => {
                 </h2>
             </div>
 
-            {/* Stage Grid */}
-            <div className="relative grid grid-cols-10 grid-rows-20 gap-[1px] border-8 border-[#003b6f] bg-[#111] p-1 h-[60vh] w-auto aspect-[1/2] md:h-[75vh] overflow-hidden">
-                {stage.map((row, y) =>
-                    row.map((cell, x) => {
-                        // Apply disintegration effect if this row is animating
-                        const isExploding = animatingRows.includes(y);
-                        return (
-                            <div key={x} className={`relative w-full h-full ${isExploding ? 'animate-disintegrate' : ''}`}>
-                                <Cell type={cell[0]} />
-                                {/* White flash overlay for disintegration */}
-                                {isExploding && (
-                                    <div 
-                                        className="absolute inset-0 bg-white z-10 animate-flash-white"
-                                        style={{ animationDelay: `${x * 50}ms` }} 
-                                    />
-                                )}
-                            </div>
-                        );
-                    })
-                )}
+            {/* Container for Grid and Overlay Elements */}
+            <div className="relative">
+                
+                {/* Stage Grid (Clipped) */}
+                <div className="relative grid grid-cols-10 grid-rows-20 gap-[1px] border-8 border-[#003b6f] bg-[#111] p-1 h-[60vh] w-auto aspect-[1/2] md:h-[75vh] overflow-hidden">
+                    {stage.map((row, y) =>
+                        row.map((cell, x) => {
+                            // Apply disintegration effect if this row is animating
+                            const isExploding = animatingRows.includes(y);
+                            return (
+                                <div key={x} className={`relative w-full h-full ${isExploding ? 'animate-disintegrate' : ''}`}>
+                                    <Cell type={cell[0]} />
+                                    {/* White flash overlay for disintegration */}
+                                    {isExploding && (
+                                        <div 
+                                            className="absolute inset-0 bg-white z-10 animate-flash-white"
+                                            style={{ animationDelay: `${x * 50}ms` }} 
+                                        />
+                                    )}
+                                </div>
+                            );
+                        })
+                    )}
+                    
+                    {/* Teleport Effect Overlay */}
+                    {teleport && teleport.active && (
+                        <div className="absolute inset-0 pointer-events-none z-20">
+                            {teleport.tetromino.map((row, relativeY) => 
+                                row.map((value, relativeX) => {
+                                    if (value !== 0) {
+                                        // Calculate grid position percentages
+                                        const left = (teleport.x + relativeX) * 10;
+                                        const top = (teleport.yStart + relativeY) * 5;
+                                        const height = (teleport.yEnd - teleport.yStart) * 5;
+                                        
+                                        return (
+                                            <div key={`tp-grp-${relativeY}-${relativeX}`} className="contents">
+                                                 {/* The Beam */}
+                                                <div 
+                                                    className="absolute animate-teleport-beam"
+                                                    style={{
+                                                        left: `${left}%`,
+                                                        top: `${top}%`,
+                                                        width: '10%',
+                                                        height: `${height}%`,
+                                                        background: 'linear-gradient(to bottom, rgba(136, 226, 255, 0) 0%, rgba(136, 226, 255, 0.4) 30%, rgba(200, 240, 255, 0.9) 100%)',
+                                                        boxShadow: '0 0 15px rgba(136, 226, 255, 0.6)',
+                                                        zIndex: 20
+                                                    }}
+                                                />
+                                                {/* The Impact Flash */}
+                                                <div 
+                                                    className="absolute animate-teleport-flash bg-white mix-blend-screen"
+                                                     style={{
+                                                        left: `${left}%`,
+                                                        top: `${(teleport.yEnd + relativeY) * 5}%`,
+                                                        width: '10%',
+                                                        height: '5%',
+                                                        zIndex: 21
+                                                    }}
+                                                />
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                })
+                            )}
+                        </div>
+                    )}
+                </div>
 
-                {/* DALEK & LASER OVERLAY */}
+                {/* DALEK & LASER OVERLAY (Unclipped) */}
+                {/* Positioned absolutely over the grid container, but allowing overflow for the Dalek */}
                 {isAnimating && (
-                    <>
-                        {/* The Dalek */}
+                    <div className="absolute inset-0 pointer-events-none z-50">
+                        {/* The Dalek - Positioned to the left of the board */}
                         <div 
-                            className="absolute z-50 transition-all duration-300 ease-out animate-dalek-enter"
+                            className="absolute transition-all duration-300 ease-out animate-dalek-enter"
                             style={{
-                                top: `${Math.max(0, topPercentage - 5)}%`, // Position slightly above the rows
-                                left: '-120px', // Start off-screen
+                                top: `${Math.max(0, topPercentage - 5)}%`, // Position relative to the row being cleared
+                                left: '-140px', // Outside the board to the left
                                 height: '120px',
                                 width: '100px',
                             }}
                         >
                             {/* Speech Bubble */}
-                            <div className="absolute -top-12 left-20 bg-white text-black p-2 rounded-xl rounded-bl-none font-bold text-xs whitespace-nowrap border-2 border-black animate-pop-in z-50">
+                            <div className="absolute -top-16 -right-10 bg-white text-red-600 p-3 rounded-2xl rounded-bl-none font-black text-xl whitespace-nowrap border-4 border-black animate-pop-in z-50 shadow-[4px_4px_0px_rgba(0,0,0,0.5)] tracking-wider">
                                 EXTERMINATE!
                             </div>
 
                             {/* Dalek CSS Art */}
-                            <div className="relative w-full h-full">
+                            <div className="relative w-full h-full"> {/* Removed scale-x-[-1] so it faces right (original orientation) */}
                                 {/* Dome */}
                                 <div className="absolute top-0 left-2 w-16 h-10 bg-yellow-700 rounded-t-full border-2 border-yellow-900 z-20"></div>
                                 {/* Eye Stalk */}
@@ -113,7 +166,7 @@ const Stage: React.FC<StageProps> = ({ stage, animatingRows }) => {
                             {/* Inner core of laser */}
                             <div className="w-full h-1/3 bg-white blur-[2px] absolute top-1/3"></div>
                         </div>
-                    </>
+                    </div>
                 )}
             </div>
 
@@ -122,10 +175,10 @@ const Stage: React.FC<StageProps> = ({ stage, animatingRows }) => {
                     clip-path: polygon(20% 0, 80% 0, 100% 100%, 0% 100%);
                 }
                 @keyframes dalek-enter {
-                    0% { transform: translateX(0); }
-                    20% { transform: translateX(110px); }
-                    80% { transform: translateX(110px); }
-                    100% { transform: translateX(0); }
+                    0% { transform: translateX(-50px); opacity: 0; }
+                    20% { transform: translateX(0); opacity: 1; }
+                    80% { transform: translateX(0); opacity: 1; }
+                    100% { transform: translateX(-50px); opacity: 0; }
                 }
                 @keyframes pop-in {
                     0% { opacity: 0; transform: scale(0); }
@@ -177,6 +230,23 @@ const Stage: React.FC<StageProps> = ({ stage, animatingRows }) => {
                 }
                 .animate-flash-white {
                     animation: flash-white 1s forwards;
+                }
+                @keyframes teleport-beam {
+                    0% { opacity: 0; transform: scaleY(0.1); }
+                    20% { opacity: 1; transform: scaleY(1); }
+                    100% { opacity: 0; width: 0%; transform: scaleY(1); }
+                }
+                .animate-teleport-beam {
+                    animation: teleport-beam 0.3s ease-out forwards;
+                    transform-origin: bottom center;
+                }
+                @keyframes teleport-flash {
+                    0% { opacity: 0; transform: scale(0.5); }
+                    50% { opacity: 1; transform: scale(1.5); }
+                    100% { opacity: 0; transform: scale(2); }
+                }
+                .animate-teleport-flash {
+                    animation: teleport-flash 0.3s ease-out forwards;
                 }
             `}</style>
         </div>
